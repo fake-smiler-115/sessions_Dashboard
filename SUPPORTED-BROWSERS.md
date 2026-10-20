@@ -30,7 +30,9 @@ the format is known. Firefox and Safari storage formats are not decoded.
   Keychain item is missing.
 - Local Storage: `Partially supported`; only string records for the exact origin
   are transferred.
-- IndexedDB and Session Storage: `Unsupported` / not migrated.
+- Session Storage: `Partially supported`; written into the destination tab and
+  persisted for session restore, but tab- and session-scoped.
+- IndexedDB: `Unsupported` / not migrated.
 
 ## Staged destinations
 

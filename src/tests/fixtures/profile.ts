@@ -32,7 +32,7 @@ export async function createChromiumFixture(): Promise<{ dir: string; cleanup: (
     { origin: 'https://example.com', key: 'unicode', value: 'héllo' },
     { origin: 'https://other.test', key: 'x', value: 'y' }
   ])
-  await writeLocalStorage(path.join(dir, 'Session Storage'), [{ origin: 'https://example.com', key: 'tab', value: '1' }])
+  await writeSessionStorage(path.join(dir, 'Session Storage'), [{ origin: 'https://example.com', key: 'tab', value: '1' }])
 
   const idb = path.join(dir, 'IndexedDB', 'https_example.com_0.indexeddb.leveldb')
   await fs.mkdir(idb, { recursive: true })
@@ -71,5 +71,33 @@ export async function writeLocalStorage(
     await db.put(key, value)
   }
   await db.put(Buffer.from(`META:${entries[0]?.origin ?? 'https://example.com'}`), Buffer.from([0x08, 0x01]))
+  await db.close()
+}
+
+export async function writeSessionStorage(
+  dir: string,
+  entries: Array<{ origin: string; key: string; value: string }>
+): Promise<void> {
+  await fs.mkdir(dir, { recursive: true })
+  const db = new ClassicLevel<Buffer, Buffer>(dir, { keyEncoding: 'binary', valueEncoding: 'binary' })
+  await db.open()
+  await db.put(Buffer.from('version', 'latin1'), Buffer.from('1', 'latin1'))
+  const origins = [...new Set(entries.map((entry) => entry.origin))]
+  let mapId = 0
+  for (const origin of origins) {
+    const uuid = `00000000_0000_4000_8000_${String(mapId).padStart(12, '0')}`
+    const originRaw = origin.endsWith('/') ? origin : `${origin}/`
+    await db.put(
+      Buffer.concat([Buffer.from(`namespace-${uuid}-`, 'latin1'), Buffer.from(originRaw, 'utf8')]),
+      Buffer.from(String(mapId), 'latin1')
+    )
+    for (const entry of entries.filter((candidate) => candidate.origin === origin)) {
+      await db.put(
+        Buffer.concat([Buffer.from(`map-${mapId}-`, 'latin1'), Buffer.from(entry.key, 'utf8')]),
+        Buffer.from(entry.value, 'utf16le')
+      )
+    }
+    mapId += 1
+  }
   await db.close()
 }

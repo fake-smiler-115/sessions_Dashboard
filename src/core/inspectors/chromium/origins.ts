@@ -2,6 +2,7 @@ import type { OriginSummary } from '../../../shared/types/session'
 import { resolveChromiumPaths } from './paths'
 import { readCookieRows, summarizeCookies } from './cookies'
 import { readLocalStorageDir } from './local-storage'
+import { readSessionStorageDir } from './session-storage'
 import { readIndexedDbOrigins } from './indexeddb'
 
 export interface StorageInspection {
@@ -116,20 +117,23 @@ export async function inspectProfileStorage(profileDir: string): Promise<Storage
   }
 
   if (paths.sessionStorageDir) {
-    const sst = await readLocalStorageDir(paths.sessionStorageDir)
+    const sst = await readSessionStorageDir(paths.sessionStorageDir)
+    if (!sst.readable) {
+      errors.push(`Session Storage: ${sst.error ?? 'unreadable LevelDB store'}`)
+    }
     for (const summary of sst.origins) {
       const entry = ensure(summary.origin)
       entry.sessionStorage += summary.count
       entry.estimatedSizeBytes += summary.sizeBytes
-      entry.reasons.add('Session Storage is tab-scoped and cannot be migrated losslessly.')
+      entry.reasons.add('Session Storage is tab- and session-scoped; it is written into the destination tab.')
     }
   }
 
   for (const entry of map.values()) {
-    entry.migratable = entry.cookies > 0 || entry.localStorage > 0
-    entry.exportable = entry.localStorage > 0 || entry.cookies > 0
+    entry.migratable = entry.cookies > 0 || entry.localStorage > 0 || entry.sessionStorage > 0
+    entry.exportable = entry.localStorage > 0 || entry.cookies > 0 || entry.sessionStorage > 0
     entry.readable = entry.readable && !entry.reasons.has('Unreadable storage')
-    if (!entry.migratable && entry.sessionStorage > 0) {
+    if (entry.cookies === 0 && entry.localStorage === 0 && entry.sessionStorage > 0) {
       entry.reasons.add('Only session-scoped storage was found for this origin.')
     }
   }

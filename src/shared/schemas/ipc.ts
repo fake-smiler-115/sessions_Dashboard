@@ -28,7 +28,7 @@ export const StartSiteMigrationSchema = z.object({
   destBrowserId: browserId,
   destProfileDir: z.string().min(1),
   origin: z.string().min(1),
-  categories: z.array(z.enum(['cookies', 'localStorage'])).min(1),
+  categories: z.array(z.enum(['cookies', 'localStorage', 'sessionStorage'])).min(1),
   persistSessionCookies: z.boolean(),
   confirmation: z.literal('migrate-website-session')
 })
@@ -36,6 +36,22 @@ export const QuitBrowserSchema = z.object({ browserId })
 export const GetJobsSchema = z.object({})
 export const RevealPathSchema = z.object({ path: z.string().min(1) })
 export const GetAppInfoSchema = z.object({})
+export const ExportSiteBundleSchema = z.object({
+  sourceBrowserId: browserId,
+  sourceProfileDir: z.string().min(1),
+  origin: z.string().min(1),
+  categories: z.array(z.enum(['cookies', 'localStorage', 'sessionStorage'])).min(1)
+})
+export const SelectSiteBundleSchema = z.object({})
+export const ImportSiteBundleSchema = z.object({
+  destBrowserId: browserId,
+  destProfileDir: z.string().min(1),
+  origin: z.string().min(1),
+  bundlePath: z.string().min(1),
+  categories: z.array(z.enum(['cookies', 'localStorage', 'sessionStorage'])).min(1),
+  persistSessionCookies: z.boolean(),
+  confirmation: z.literal('import-session-bundle')
+})
 
 export const IpcSchemas = {
   detectProfiles: DetectProfilesSchema,
@@ -50,5 +66,8 @@ export const IpcSchemas = {
   quitBrowser: QuitBrowserSchema,
   getJobs: GetJobsSchema,
   revealPath: RevealPathSchema,
-  getAppInfo: GetAppInfoSchema
+  getAppInfo: GetAppInfoSchema,
+  exportSiteBundle: ExportSiteBundleSchema,
+  selectSiteBundle: SelectSiteBundleSchema,
+  importSiteBundle: ImportSiteBundleSchema
 } as const

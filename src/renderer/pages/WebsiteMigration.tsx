@@ -47,7 +47,7 @@ export default function WebsiteMigration({ profiles, preset, onOpenHistory }: Pr
   const [loadingOrigins, setLoadingOrigins] = useState(false)
   const [plan, setPlan] = useState<SitePlan | null>(null)
   const [planError, setPlanError] = useState<string | null>(null)
-  const [selectedCategories, setSelectedCategories] = useState<Array<'cookies' | 'localStorage'>>([])
+  const [selectedCategories, setSelectedCategories] = useState<Array<'cookies' | 'localStorage' | 'sessionStorage'>>([])
   const [persistSessionCookies, setPersistSessionCookies] = useState(true)
   const [checking, setChecking] = useState(false)
   const [quitting, setQuitting] = useState(false)
@@ -148,8 +148,12 @@ export default function WebsiteMigration({ profiles, preset, onOpenHistory }: Pr
       setPlan(nextPlan)
       setSelectedCategories(
         nextPlan.categories
-          .filter((category) => (category.category === 'cookies' || category.category === 'localStorage') && category.migratable)
-          .map((category) => category.category as 'cookies' | 'localStorage')
+          .filter(
+            (category) =>
+              (category.category === 'cookies' || category.category === 'localStorage' || category.category === 'sessionStorage') &&
+              category.migratable
+          )
+          .map((category) => category.category as 'cookies' | 'localStorage' | 'sessionStorage')
       )
     } catch (error) {
       setPlan(null)
@@ -170,7 +174,7 @@ export default function WebsiteMigration({ profiles, preset, onOpenHistory }: Pr
     }
   }
 
-  function toggleCategory(category: 'cookies' | 'localStorage') {
+  function toggleCategory(category: 'cookies' | 'localStorage' | 'sessionStorage') {
     setSelectedCategories((current) =>
       current.includes(category) ? current.filter((entry) => entry !== category) : [...current, category]
     )
@@ -356,7 +360,8 @@ export default function WebsiteMigration({ profiles, preset, onOpenHistory }: Pr
               </thead>
               <tbody>
                 {plan.categories.map((category) => {
-                  const selectable = category.category === 'cookies' || category.category === 'localStorage'
+                  const selectable =
+                    category.category === 'cookies' || category.category === 'localStorage' || category.category === 'sessionStorage'
                   return (
                     <tr key={category.category} className="border-t border-[#23263d]">
                       <td className="px-3 py-2 font-medium">{CATEGORY_LABELS[category.category]}</td>
@@ -369,8 +374,10 @@ export default function WebsiteMigration({ profiles, preset, onOpenHistory }: Pr
                         <input
                           type="checkbox"
                           disabled={!selectable || !category.migratable}
-                          checked={selectedCategories.includes(category.category as 'cookies' | 'localStorage')}
-                          onChange={() => toggleCategory(category.category as 'cookies' | 'localStorage')}
+                          checked={selectedCategories.includes(
+                            category.category as 'cookies' | 'localStorage' | 'sessionStorage'
+                          )}
+                          onChange={() => toggleCategory(category.category as 'cookies' | 'localStorage' | 'sessionStorage')}
                           className="h-4 w-4 accent-[#3b82f6]"
                         />
                       </td>

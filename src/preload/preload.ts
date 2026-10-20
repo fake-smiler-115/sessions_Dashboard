@@ -17,6 +17,9 @@ const api: IpcApi = {
   quitBrowser: (browserId) => ipcRenderer.invoke('quitBrowser', { browserId }),
   getJobs: () => ipcRenderer.invoke('getJobs'),
   revealPath: (targetPath: string) => ipcRenderer.invoke('revealPath', { path: targetPath }),
+  exportSiteBundle: (input) => ipcRenderer.invoke('exportSiteBundle', input),
+  selectSiteBundle: () => ipcRenderer.invoke('selectSiteBundle'),
+  importSiteBundle: (request) => ipcRenderer.invoke('importSiteBundle', request),
   onMigrationProgress: (callback: (progress: MigrationProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: MigrationProgress) => callback(progress)
     ipcRenderer.on('migration-progress', listener)

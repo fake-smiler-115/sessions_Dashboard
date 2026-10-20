@@ -44,8 +44,19 @@ Opened with `classic-level` using binary key and value encodings.
 
 ## Session Storage
 
-Stored in a LevelDB store with the same value encoding, but it is tab- and
-session-scoped. It is inspected only; it is never migrated.
+Stored under `<profile>/Session Storage` — unlike Local Storage, the store
+directory itself is the LevelDB database (there is no nested `leveldb` folder).
+Keys use an internal namespace scheme:
+
+- `version` — schema marker (`1`).
+- `namespace-<uuid>-<origin>/` — maps an origin to a numeric map id; the value
+  is the map id as text. The origin carries a trailing slash.
+- `map-<id>-<key>` — one record; the value is raw UTF-16LE with no prefix byte.
+
+Session Storage is tab- and session-scoped: it is read and can be written into
+the destination tab, and it persists for session restore, but it will not appear
+in a brand-new tab. Migrations that include it are reported as
+`partially-migrated`.
 
 ## IndexedDB
 
@@ -63,3 +74,26 @@ this build.
 `jobs.json` and IPC results contain: origin, browser IDs, timestamps, category
 statuses, record counts, verification counts, reasons and the backup path.
 Cookie and Local Storage values are excluded.
+
+## JSON session bundles
+
+A bundle is a single JSON file written by the export feature and read by the
+import feature:
+
+```json
+{
+  "format": "session-transfer-bundle",
+  "version": 1,
+  "generatedAt": "2026-01-01T00:00:00.000Z",
+  "source": { "browserId": "chrome", "origin": "https://example.com" },
+  "categories": ["cookies", "localStorage", "sessionStorage"],
+  "cookies": [{ "name": "sid", "value": "...", "domain": ".example.com", "path": "/", "secure": true, "httpOnly": true, "sameSite": 1, "session": false, "expiresUnix": 1800000000 }],
+  "localStorage": [{ "key": "token", "value": "..." }],
+  "sessionStorage": [{ "key": "tab", "value": "..." }]
+}
+```
+
+Unlike reports, a bundle **does** contain decrypted cookie values and storage
+values in plain text. It is written with `0600` permissions and is only read
+through the app's file picker. The import path rejects files that do not match
+this schema.

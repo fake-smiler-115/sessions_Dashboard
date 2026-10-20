@@ -16,9 +16,11 @@ export interface SourceSiteData {
   origin: string
   cookies: DecryptedCookie[]
   localStorage: Array<{ origin: string; key: string; value: string }>
+  sessionStorage: Array<{ origin: string; key: string; value: string }>
   cookieError?: string
   cookieWarning?: string
   localStorageError?: string
+  sessionStorageError?: string
   cookieCountBeforeRead?: number
   skippedExpiredCookies: number
   skippedPartitionedCookies?: number
@@ -38,6 +40,11 @@ export interface SessionWriter {
   mergeDetails?: string[]
   writeCookies(cookies: DecryptedCookie[], options: { persistSessionCookies: boolean }): Promise<WriteResult>
   writeLocalStorage(origin: string, items: Array<{ key: string; value: string }>): Promise<WriteResult>
+  writeSessionStorage(origin: string, items: Array<{ key: string; value: string }>): Promise<WriteResult>
+  verifySessionStorage(
+    origin: string,
+    items: Array<{ key: string; value: string }>
+  ): Promise<{ checked: number; matched: number; details: string[] }>
   verifyCookies(cookies: DecryptedCookie[]): Promise<{ checked: number; matched: number; details: string[] }>
   verifyLocalStorage(
     origin: string,
@@ -50,8 +57,10 @@ export interface SessionCapabilities {
   browserId: BrowserId
   readableCookies: boolean
   readableLocalStorage: boolean
+  readableSessionStorage: boolean
   writableCookies: boolean
   writableLocalStorage: boolean
+  writableSessionStorage: boolean
   requiresKeychain: boolean
   installed: boolean
   reasons: string[]

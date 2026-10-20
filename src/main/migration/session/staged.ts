@@ -5,10 +5,12 @@ import { ClassicLevel } from 'classic-level'
 import type { BrowserId } from '../../../shared/types/browser'
 import { resolveChromiumPaths } from '../../../core/inspectors/chromium/paths'
 import { cookieHostMatches } from '../../../core/inspectors/chromium/cookies'
+import { mergeSessionStorageDirs } from '../../../core/inspectors/chromium/session-storage'
 
 export interface StagedMergeResult {
   cookies: number
   localStorageKeys: number
+  sessionStorageKeys: number
   details: string[]
 }
 
@@ -100,6 +102,7 @@ export async function mergeStagedProfile(input: {
   const details: string[] = []
   let cookies = 0
   let localStorageKeys = 0
+  let sessionStorageKeys = 0
   const host = new URL(input.origin).hostname
 
   const stagedPaths = await resolveChromiumPaths(input.stagedProfileDir)
@@ -127,5 +130,17 @@ export async function mergeStagedProfile(input: {
     }
   }
 
-  return { cookies, localStorageKeys, details }
+  if (stagedPaths.sessionStorageDir && realPaths.sessionStorageDir) {
+    try {
+      const result = await mergeSessionStorageDirs(stagedPaths.sessionStorageDir, realPaths.sessionStorageDir, input.origin)
+      sessionStorageKeys = result.merged
+      if (result.detail) details.push(result.detail)
+    } catch (error) {
+      details.push(
+        `Session Storage could not be merged into the destination: ${error instanceof Error ? error.message : 'unknown error'}`
+      )
+    }
+  }
+
+  return { cookies, localStorageKeys, sessionStorageKeys, details }
 }

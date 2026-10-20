@@ -3,6 +3,7 @@ import { BROWSER_EXECUTABLES } from '../../browser-discovery/executables'
 import { resolveChromiumPaths } from '../../../core/inspectors/chromium/paths'
 import { cookieHostMatches, readCookieRows } from '../../../core/inspectors/chromium/cookies'
 import { readLocalStorageDir } from '../../../core/inspectors/chromium/local-storage'
+import { readSessionStorageDir } from '../../../core/inspectors/chromium/session-storage'
 import { deriveChromiumCookieKey, decryptChromiumCookieValue } from '../../../core/security/cookie-crypto'
 import { readGenericPassword } from '../../security/keychain'
 import type { SourceSiteData } from '../../../core/session/types'
@@ -25,8 +26,10 @@ export async function loadSourceSiteData(
       origin: originInput,
       cookies: [],
       localStorage: [],
+      sessionStorage: [],
       cookieError: 'This browser does not expose a supported session store reader.',
       localStorageError: 'This browser does not expose a supported Local Storage reader.',
+      sessionStorageError: 'This browser does not expose a supported Session Storage reader.',
       skippedExpiredCookies: 0
     }
   }
@@ -39,6 +42,7 @@ export async function loadSourceSiteData(
     origin,
     cookies: [],
     localStorage: [],
+    sessionStorage: [],
     skippedExpiredCookies: 0
   }
 
@@ -133,6 +137,19 @@ export async function loadSourceSiteData(
     }
   } else {
     result.localStorageError = 'No Local Storage store was found in the source profile.'
+  }
+
+  if (paths.sessionStorageDir) {
+    const read = await readSessionStorageDir(paths.sessionStorageDir)
+    if (!read.readable) {
+      result.sessionStorageError = read.error ?? 'Unable to read source Session Storage'
+    } else {
+      result.sessionStorage = read.records
+        .filter((record) => record.origin === origin)
+        .map((record) => ({ origin: record.origin, key: record.key, value: record.value }))
+    }
+  } else {
+    result.sessionStorageError = 'No Session Storage store was found in the source profile.'
   }
 
   return result

@@ -12,7 +12,7 @@ metadata and reports.
 | `src/main/ipc/handlers.ts` | IPC handlers, allowed-profile enforcement, progress events |
 | `src/main/browser-discovery/` | App paths, profile discovery, running checks, Keychain service names |
 | `src/main/security/` | Keychain CLI access, allowed-profile registry |
-| `src/main/migration/session/` | Plan service, source loading, CDP launcher/writer, backup, job pipeline, job store |
+| `src/main/migration/session/` | Plan service, source loading, CDP launcher/writer, backup, job pipeline, JSON bundle export/import, job store |
 | `src/core/inspectors/chromium/` | Cookie DB, Local Storage LevelDB, IndexedDB, origin aggregation, snapshots |
 | `src/core/security/cookie-crypto.ts` | PBKDF2 + AES-128-CBC cookie decryption |
 | `src/core/session/` | Capability matrix and site plan builder |
@@ -42,6 +42,16 @@ metadata and reports.
    and the cookie DB is checked again after the process exits.
 7. `runSiteMigration` builds a report with counts and reasons only, appends it to
    `jobs.json`, and emits the final result.
+
+## JSON bundle pipeline
+
+`exportSiteBundle` reuses `loadSourceSiteData`, shapes the values into a
+`session-transfer-bundle` JSON document (`core/session/bundle.ts`) and writes it
+through a save dialog. `selectSiteBundle` reads and validates a bundle through an
+open dialog, and `importSiteBundle` reconstructs a `SourceSiteData`, then calls
+`migrateSiteData` — the same backup, staged-write, verification and merge path as
+a direct migration. Bundle paths must be approved through the open dialog before
+they can be imported.
 
 ## Snapshot rules
 

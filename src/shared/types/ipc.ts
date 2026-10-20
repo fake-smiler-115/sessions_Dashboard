@@ -1,9 +1,12 @@
 import type { BrowserProfile, Inventory } from './browser'
 import type {
+  BundleExportResult,
+  BundleSelectionResult,
   MigrationProgress,
   OriginSummary,
   ProfileOriginScan,
   SessionMigrationResult,
+  SiteImportRequest,
   SiteMigrationRequest,
   SitePlan,
   StoredJob
@@ -37,4 +40,12 @@ export interface IpcApi {
   revealPath: (path: string) => Promise<void>
   onMigrationProgress: (callback: (progress: MigrationProgress) => void) => () => void
   getAppInfo: () => Promise<AppInfo>
+  exportSiteBundle: (input: {
+    sourceBrowserId: BrowserProfile['browserId']
+    sourceProfileDir: string
+    origin: string
+    categories: Array<'cookies' | 'localStorage' | 'sessionStorage'>
+  }) => Promise<BundleExportResult>
+  selectSiteBundle: () => Promise<BundleSelectionResult>
+  importSiteBundle: (request: SiteImportRequest) => Promise<SessionMigrationResult>
 }

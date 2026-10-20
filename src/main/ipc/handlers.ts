@@ -14,10 +14,14 @@ import type { ProfileOriginScan } from '../../shared/types/session'
 import type { BrowserProfile } from '../../shared/types/browser'
 import { computeSitePlan } from '../migration/session/plan-service'
 import { runSiteMigration } from '../migration/session/job'
+import { runSiteImport } from '../migration/session/import-job'
+import { buildExportBundle } from '../migration/session/export'
+import { parseBundle, serializeBundle, summarizeBundle } from '../../core/session/bundle'
 import { readJobs } from '../migration/session/jobs-store'
 import { CHROMIUM_BROWSERS, BROWSER_NAMES } from '../browser-discovery/executables'
 
 const knownProfiles = new Map<string, BrowserProfile>()
+const approvedBundlePaths = new Set<string>()
 
 async function detectAndRegister(): Promise<BrowserProfile[]> {
   const profiles = await detectProfiles()
@@ -174,4 +178,72 @@ export function registerHandlers() {
     }
     shell.showItemInFolder(resolved)
   })
+
+  ipcMain.handle('exportSiteBundle', async (_event, args) => {
+    const data = validateArgs(IpcSchemas.exportSiteBundle, args)
+    const resolved = await assertAllowedDir(data.sourceProfileDir)
+    const { bundle, warnings } = await buildExportBundle({
+      sourceBrowserId: data.sourceBrowserId,
+      sourceProfileId: knownProfiles.get(resolved)?.profileId,
+      sourceProfileDir: resolved,
+      origin: data.origin,
+      categories: data.categories
+    })
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const result = await dialog.showSaveDialog({
+      title: 'Export session bundle',
+      defaultPath: path.join(app.getPath('downloads'), `session-${safeHost(data.origin)}-${stamp}.json`),
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) return { canceled: true }
+    await fs.writeFile(result.filePath, serializeBundle(bundle), { mode: 0o600 })
+    return { canceled: false, path: result.filePath, summary: summarizeBundle(bundle), warnings }
+  })
+
+  ipcMain.handle('selectSiteBundle', async () => {
+    validateArgs(IpcSchemas.selectSiteBundle, {})
+    const result = await dialog.showOpenDialog({
+      title: 'Select a session bundle',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true }
+    const filePath = path.resolve(result.filePaths[0])
+    const bundle = parseBundle(await fs.readFile(filePath, 'utf8'))
+    approvedBundlePaths.add(filePath)
+    return { canceled: false, path: filePath, summary: summarizeBundle(bundle) }
+  })
+
+  ipcMain.handle('importSiteBundle', async (event, args) => {
+    const request = validateArgs(IpcSchemas.importSiteBundle, args)
+    const resolved = path.resolve(request.bundlePath)
+    if (!approvedBundlePaths.has(resolved)) {
+      throw new Error('Select the bundle file through this app before importing it')
+    }
+    await assertAllowedDir(request.destProfileDir)
+    const userDataDir = app.getPath('userData')
+    const sender = event.sender
+    const result = await runSiteImport(
+      { ...request, bundlePath: resolved },
+      {
+        userDataDir,
+        backupRoot: path.join(userDataDir, 'backups'),
+        onProgress: (progress) => {
+          if (!sender.isDestroyed()) sender.send('migration-progress', progress)
+        }
+      }
+    )
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send('jobs-changed')
+    }
+    return result
+  })
+}
+
+function safeHost(origin: string): string {
+  try {
+    return new URL(origin).hostname.replace(/[^a-z0-9.-]/gi, '_')
+  } catch {
+    return 'site'
+  }
 }

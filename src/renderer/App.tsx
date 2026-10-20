@@ -6,10 +6,11 @@ import Browsers from './pages/Browsers'
 import WebsiteInventory from './pages/WebsiteInventory'
 import Compatibility from './pages/Compatibility'
 import WebsiteMigration, { type MigrationPreset } from './pages/WebsiteMigration'
+import SessionBundle from './pages/SessionBundle'
 import History from './pages/History'
 import Settings from './pages/Settings'
 
-type Page = 'dashboard' | 'browsers' | 'websites' | 'compatibility' | 'migration' | 'history' | 'settings'
+type Page = 'dashboard' | 'browsers' | 'websites' | 'compatibility' | 'migration' | 'bundle' | 'history' | 'settings'
 
 const NAV: Array<{ id: Page; label: string; hint: string }> = [
   { id: 'dashboard', label: 'Dashboard', hint: 'Overview' },
@@ -17,6 +18,7 @@ const NAV: Array<{ id: Page; label: string; hint: string }> = [
   { id: 'websites', label: 'Website Inventory', hint: 'Origins and storage' },
   { id: 'compatibility', label: 'Migration Compatibility', hint: 'Capability matrix' },
   { id: 'migration', label: 'Website Migration', hint: 'Session transfer' },
+  { id: 'bundle', label: 'Session Bundle', hint: 'Export / import JSON' },
   { id: 'history', label: 'Migration History', hint: 'Jobs and reports' },
   { id: 'settings', label: 'Settings', hint: 'Security and data' }
 ]
@@ -180,6 +182,9 @@ export default function App() {
         {page === 'compatibility' && <Compatibility profiles={profiles} onMigrate={startFromMatrix} />}
         {page === 'migration' && (
           <WebsiteMigration profiles={profiles} preset={preset} onOpenHistory={() => setPage('history')} />
+        )}
+        {page === 'bundle' && (
+          <SessionBundle profiles={profiles} onOpenHistory={() => setPage('history')} onRefreshProfiles={() => void loadProfiles()} />
         )}
         {page === 'history' && <History />}
         {page === 'settings' && <Settings />}

@@ -18,6 +18,7 @@ function normalizeDomain(domain: string): string {
 export class CdpSessionWriter implements SessionWriter {
   readonly staged: boolean
   mergeDetails: string[] = []
+  private originLoaded = false
 
   private constructor(
     private readonly launched: LaunchedBrowser,
@@ -93,6 +94,13 @@ export class CdpSessionWriter implements SessionWriter {
     return result
   }
 
+  private async ensureOrigin(): Promise<boolean> {
+    if (this.originLoaded) return true
+    const loaded = await this.navigateToOrigin()
+    if (loaded) this.originLoaded = true
+    return loaded
+  }
+
   private async navigateToOrigin(): Promise<boolean> {
     for (const probe of [`${this.origin}/robots.txt`, `${this.origin}/`]) {
       try {
@@ -118,18 +126,31 @@ export class CdpSessionWriter implements SessionWriter {
   }
 
   async writeLocalStorage(origin: string, items: Array<{ key: string; value: string }>): Promise<WriteResult> {
+    return this.writeWebStorage('localStorage', origin, items)
+  }
+
+  async writeSessionStorage(origin: string, items: Array<{ key: string; value: string }>): Promise<WriteResult> {
+    return this.writeWebStorage('sessionStorage', origin, items)
+  }
+
+  private async writeWebStorage(
+    storage: 'localStorage' | 'sessionStorage',
+    _origin: string,
+    items: Array<{ key: string; value: string }>
+  ): Promise<WriteResult> {
+    const label = storage === 'localStorage' ? 'Local Storage' : 'Session Storage'
     const result: WriteResult = { imported: 0, skipped: 0, failed: 0, verified: 0, reasons: [] }
     if (items.length === 0) return result
-    const onOrigin = await this.navigateToOrigin()
+    const onOrigin = await this.ensureOrigin()
     if (!onOrigin) {
       result.failed = items.length
-      result.reasons.push('The destination browser could not load the selected origin, so Local Storage was not written.')
+      result.reasons.push(`The destination browser could not load the selected origin, so ${label} was not written.`)
       return result
     }
     for (const item of items) {
       try {
         const response = await this.page.send<{ exceptionDetails?: unknown }>('Runtime.evaluate', {
-          expression: `localStorage.setItem(${JSON.stringify(item.key)}, ${JSON.stringify(item.value)})`,
+          expression: `${storage}.setItem(${JSON.stringify(item.key)}, ${JSON.stringify(item.value)})`,
           returnByValue: true
         })
         if (response.exceptionDetails) result.failed += 1
@@ -139,7 +160,7 @@ export class CdpSessionWriter implements SessionWriter {
       }
     }
     if (result.failed > 0) {
-      result.reasons.push(`${result.failed} Local Storage record(s) could not be written.`)
+      result.reasons.push(`${result.failed} ${label} record(s) could not be written.`)
     }
     return result
   }
@@ -178,6 +199,22 @@ export class CdpSessionWriter implements SessionWriter {
     origin: string,
     items: Array<{ key: string; value: string }>
   ): Promise<{ checked: number; matched: number; details: string[] }> {
+    return this.verifyWebStorage('localStorage', origin, items)
+  }
+
+  async verifySessionStorage(
+    origin: string,
+    items: Array<{ key: string; value: string }>
+  ): Promise<{ checked: number; matched: number; details: string[] }> {
+    return this.verifyWebStorage('sessionStorage', origin, items)
+  }
+
+  private async verifyWebStorage(
+    storage: 'localStorage' | 'sessionStorage',
+    _origin: string,
+    items: Array<{ key: string; value: string }>
+  ): Promise<{ checked: number; matched: number; details: string[] }> {
+    const label = storage === 'localStorage' ? 'Local Storage' : 'Session Storage'
     const details: string[] = []
     if (items.length === 0) return { checked: 0, matched: 0, details }
     let matched = 0
@@ -187,7 +224,7 @@ export class CdpSessionWriter implements SessionWriter {
         const response = await this.page.send<{ result?: { value?: unknown }; exceptionDetails?: unknown }>(
           'Runtime.evaluate',
           {
-            expression: `localStorage.getItem(${JSON.stringify(item.key)})`,
+            expression: `${storage}.getItem(${JSON.stringify(item.key)})`,
             returnByValue: true
           }
         )
@@ -197,7 +234,7 @@ export class CdpSessionWriter implements SessionWriter {
         failedReads += 1
       }
     }
-    if (failedReads > 0) details.push(`${failedReads} Local Storage value(s) could not be verified.`)
+    if (failedReads > 0) details.push(`${failedReads} ${label} value(s) could not be verified.`)
     return { checked: items.length, matched, details }
   }
 
@@ -221,7 +258,7 @@ export class CdpSessionWriter implements SessionWriter {
       })
       this.mergeDetails = result.details
       this.mergeDetails.push(
-        `Staged migration merged ${result.cookies} cookie record(s) and ${result.localStorageKeys} Local Storage key(s) into the destination profile.`
+        `Staged migration merged ${result.cookies} cookie record(s), ${result.localStorageKeys} Local Storage key(s), and ${result.sessionStorageKeys} Session Storage key(s) into the destination profile.`
       )
     } finally {
       await this.launched.cleanup()

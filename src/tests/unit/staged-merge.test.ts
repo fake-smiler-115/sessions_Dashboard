@@ -56,6 +56,7 @@ describe('staged destination merge', () => {
     })
     expect(result.cookies).toBe(2)
     expect(result.localStorageKeys).toBe(2)
+    expect(result.sessionStorageKeys).toBe(1)
     expect(result.details).toEqual([])
   })
 

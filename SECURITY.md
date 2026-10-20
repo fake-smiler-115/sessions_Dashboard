@@ -27,6 +27,18 @@ remote API or network upload.
 - The Keychain secret is read with `security find-generic-password`; macOS may
   prompt the user. A denied or timed-out request produces an honest failure.
 
+## JSON session bundles
+
+- A bundle is an explicit, user-requested export and **does** contain decrypted
+  cookie values and storage values in plain text. It is the only artifact the app
+  writes that contains credentials.
+- Bundles are written with `0600` permissions after a save dialog.
+- Bundle files can only be read through the app's open dialog; import rejects any
+  path that was not chosen that way.
+- The UI states that bundles are credential files that should be stored securely
+  and deleted when no longer needed. Bundle contents are never logged and are not
+  sent to the renderer (only a non-secret summary is).
+
 ## Destination changes
 
 - The destination is modified only after an explicit confirmation payload

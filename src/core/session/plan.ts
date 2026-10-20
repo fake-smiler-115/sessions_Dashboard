@@ -52,8 +52,10 @@ export function buildSitePlan(input: PlanInput): SitePlan {
         : undefined
 
   if (input.sameProfile) warnings.push('Source and destination refer to the same profile.')
-  if (input.sourceRunning && (source.cookies > 0 || source.localStorage > 0)) {
-    warnings.push('The source browser is running. Recent cookies or Local Storage may not be included; quit it for a complete migration.')
+  if (input.sourceRunning && (source.cookies > 0 || source.localStorage > 0 || source.sessionStorage > 0)) {
+    warnings.push(
+      'The source browser is running. Recent cookies, Local Storage, or Session Storage may not be included; quit it for a complete migration.'
+    )
   }
   if (destinationRunning) warnings.push('The destination browser is currently running. Quit it before migrating.')
   if (destinationExisting.cookies > 0) {
@@ -137,17 +139,31 @@ export function buildSitePlan(input: PlanInput): SitePlan {
     )
   )
 
+  const ssReasons: string[] = []
+  let ssStatus: SiteCategoryPlan['status'] = 'Not detected'
+  if (source.sessionStorage > 0) {
+    if (input.sameProfile) ssStatus = 'Same browser/profile'
+    else if (blockedReason) {
+      ssStatus = 'Unsupported'
+      ssReasons.push(blockedReason)
+    } else if (!sourceCaps.readableSessionStorage) {
+      ssStatus = 'Unsupported'
+      ssReasons.push('Session Storage cannot be read with a supported mechanism.')
+    } else {
+      ssStatus = 'Partially supported'
+      ssReasons.push('Session Storage is written into the destination browser tab and persisted for session restore.')
+      ssReasons.push('It is tab- and session-scoped, so it will not appear in a brand-new tab.')
+    }
+  }
   categories.push(
     base(
       'sessionStorage',
       source.sessionStorage > 0,
-      false,
+      sourceCaps.readableSessionStorage,
       source.sessionStorage,
       0,
-      source.sessionStorage > 0 ? 'Unsupported' : 'Not detected',
-      source.sessionStorage > 0
-        ? ['Session Storage is tab- and session-scoped. Copying it cannot recreate the original browser session.']
-        : []
+      ssStatus,
+      ssReasons
     )
   )
 

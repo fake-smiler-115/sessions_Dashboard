@@ -8,7 +8,9 @@ session (cookies + Local Storage) between Chromium-based browsers.
 - Discovers Chrome, Arc, Brave, Edge, Firefox and Safari profiles.
 - Inventories cookies, Local Storage, IndexedDB and Session Storage per profile, read-only.
 - Explains what can and cannot be migrated for a selected website origin.
-- Migrates cookies and Local Storage for one origin at a time into Chrome, Brave or Edge.
+- Migrates cookies, Local Storage, and Session Storage for one origin at a time into Chrome, Brave or Edge.
+- Exports a website's cookies and storage to a portable JSON bundle, and imports
+  that bundle into another browser profile.
 - Creates a destination backup with a SHA-256 manifest before writing anything.
 - Verifies imported values through the destination browser and again from its
   cookie database after the browser closes.
@@ -50,6 +52,23 @@ build. Firefox and Safari stores are not read for session transfer.
 Session-only cookies can optionally be converted to persistent cookies with a
 7-day expiry. Without that option they may be removed when the destination
 browser closes, and the report will say so.
+
+## JSON session bundles
+
+The Session Bundle page moves a website between machines or profiles through a
+file instead of a direct source-to-destination migration:
+
+1. **Export** reads one origin's cookies (decrypted), Local Storage and Session
+   Storage from a source profile and writes them to a `.json` bundle (mode
+   `0600`). Only the categories you select are included.
+2. **Import** reads that bundle and writes the same values into a destination
+   Chromium profile using the same staged-destination pipeline and backup as a
+   normal migration.
+
+A bundle contains cookie and storage values in **plain text**. Treat it as a
+credential file: store it securely and delete it when it is no longer needed.
+Bundle files are only read through the app's file picker, and imports are
+reported in Migration History like any other job.
 
 ## Safety and privacy
 
@@ -119,8 +138,12 @@ request that was denied.
 
 - Chromium only for session transfer. Firefox and Safari sessions are not read.
 - Arc is not a destination.
-- IndexedDB, Session Storage, Cache Storage, service workers and partitioned
-  (`^0`/composite-key) Local Storage records are not migrated.
+- IndexedDB, Cache Storage, service workers and partitioned (`^0`/composite-key)
+  Local Storage records are not migrated.
+- Session Storage is migrated on a best-effort basis: it is written into the
+  destination tab and persisted for session restore, but it is tab- and
+  session-scoped and will not appear in a brand-new tab, so it is reported as
+  partially migrated.
 - Partitioned (CHIPS) cookies with a `top_frame_site_key` are skipped rather
   than promoted to unpartitioned cookies.
 - The destination browser must be fully quit before migration; the app launches

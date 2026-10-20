@@ -64,7 +64,7 @@ export interface SiteMigrationRequest {
   destBrowserId: BrowserId
   destProfileDir: string
   origin: string
-  categories: Array<'cookies' | 'localStorage'>
+  categories: Array<'cookies' | 'localStorage' | 'sessionStorage'>
   persistSessionCookies: boolean
   confirmation: 'migrate-website-session'
 }
@@ -86,6 +86,8 @@ export interface SessionVerification {
   cookiesMatched: number
   localStorageChecked: number
   localStorageMatched: number
+  sessionStorageChecked?: number
+  sessionStorageMatched?: number
   details: string[]
 }
 
@@ -105,7 +107,7 @@ export interface SessionMigrationResult {
 
 export interface MigrationProgress {
   jobId: string
-  stage: 'backup' | 'launch' | 'cookies' | 'localStorage' | 'verify' | 'close' | 'done'
+  stage: 'backup' | 'launch' | 'cookies' | 'localStorage' | 'sessionStorage' | 'verify' | 'close' | 'done'
   message: string
   current?: number
   total?: number
@@ -121,4 +123,63 @@ export interface StoredJob {
   overall: 'success' | 'partial' | 'failed'
   backupPath?: string
   result: SessionMigrationResult
+}
+
+export interface PortableCookie {
+  name: string
+  value: string
+  domain: string
+  path: string
+  secure: boolean
+  httpOnly: boolean
+  sameSite: number
+  session: boolean
+  expiresUnix?: number
+}
+
+export interface PortableStorageRecord {
+  key: string
+  value: string
+}
+
+export interface PortableSessionBundle {
+  format: 'session-transfer-bundle'
+  version: 1
+  generatedAt: string
+  source: { browserId: BrowserId; origin: string; profileId?: string }
+  categories: SiteDataCategory[]
+  cookies: PortableCookie[]
+  localStorage: PortableStorageRecord[]
+  sessionStorage: PortableStorageRecord[]
+}
+
+export interface BundleSummary {
+  origin: string
+  sourceBrowserId: BrowserId
+  generatedAt: string
+  categories: SiteDataCategory[]
+  counts: { cookies: number; localStorage: number; sessionStorage: number }
+}
+
+export interface BundleExportResult {
+  canceled: boolean
+  path?: string
+  summary?: BundleSummary
+  warnings?: string[]
+}
+
+export interface BundleSelectionResult {
+  canceled: boolean
+  path?: string
+  summary?: BundleSummary
+}
+
+export interface SiteImportRequest {
+  destBrowserId: BrowserId
+  destProfileDir: string
+  origin: string
+  bundlePath: string
+  categories: Array<'cookies' | 'localStorage' | 'sessionStorage'>
+  persistSessionCookies: boolean
+  confirmation: 'import-session-bundle'
 }

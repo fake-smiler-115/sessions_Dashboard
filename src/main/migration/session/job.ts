@@ -1,7 +1,14 @@
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
-import type { SiteMigrationRequest, SessionMigrationResult, CategoryMigrationResult, MigrationProgress, StoredJob } from '../../../shared/types/session'
-import type { SessionWriter, SourceSiteData, WriteResult } from '../../../core/session/types'
+import type {
+  SiteMigrationRequest,
+  SessionMigrationResult,
+  CategoryMigrationResult,
+  MigrationProgress,
+  StoredJob
+} from '../../../shared/types/session'
+import type { BrowserId } from '../../../shared/types/browser'
+import type { SessionWriter, SourceSiteData, WriteResult, DecryptedCookie } from '../../../core/session/types'
 import { normalizeOrigin } from '../../../core/inspectors/chromium/origins'
 import { readCookieRows } from '../../../core/inspectors/chromium/cookies'
 import { resolveChromiumPaths } from '../../../core/inspectors/chromium/paths'
@@ -19,11 +26,13 @@ export interface JobDependencies {
   onProgress: (progress: MigrationProgress) => void
 }
 
+export type SupportedCategory = 'cookies' | 'localStorage' | 'sessionStorage'
+
 const LIMITATIONS = [
-  'Only cookies and Local Storage for the selected origin are migrated.',
-  'Modern Chromium blocks remote debugging on default profiles, so the destination is written through a temporary staged profile and the affected cookies and Local Storage are merged back.',
+  'Only cookies, Local Storage, and Session Storage for the selected origin are migrated.',
+  'Modern Chromium blocks remote debugging on default profiles, so the destination is written through a temporary staged profile and the affected cookies, Local Storage, and Session Storage are merged back.',
   'IndexedDB, Cache Storage, service workers, extensions, and browser settings are not migrated.',
-  'Session Storage is tab-scoped and cannot be recreated by copying files.',
+  'Session Storage is tab- and session-scoped. It is written into the destination tab and persisted for session restore, but it will not appear in a brand-new tab.',
   'Destinations are written through a local Chromium automation interface, not by copying profile files.',
   'Cookie values are held in memory only and are never written to reports or logs.'
 ]
@@ -32,7 +41,10 @@ function emptyWrite(): WriteResult {
   return { imported: 0, skipped: 0, failed: 0, verified: 0, reasons: [] }
 }
 
-export async function runSiteMigration(request: SiteMigrationRequest, deps: JobDependencies): Promise<SessionMigrationResult> {
+export async function runSiteMigration(
+  request: SiteMigrationRequest,
+  deps: JobDependencies
+): Promise<SessionMigrationResult> {
   const id = uuidv4()
   const startedAt = Date.now()
   const origin = normalizeOrigin(request.origin)
@@ -49,7 +61,10 @@ export async function runSiteMigration(request: SiteMigrationRequest, deps: JobD
     origin
   })
 
-  const selected = request.categories.filter((category) => category === 'cookies' || category === 'localStorage')
+  const selected = request.categories.filter(
+    (category): category is SupportedCategory =>
+      category === 'cookies' || category === 'localStorage' || category === 'sessionStorage'
+  )
   if (selected.length === 0) throw new Error('Select at least one supported data category')
   if (!plan.canMigrate) {
     const blocked = plan.categories.find((category) => category.detected && !category.migratable && category.reasons.length > 0)
@@ -67,35 +82,84 @@ export async function runSiteMigration(request: SiteMigrationRequest, deps: JobD
     throw new Error('Quit the destination browser before starting the migration')
   }
 
-  const categories: CategoryMigrationResult[] = []
-  const backup = await backupDestinationData(destProfileDir, origin, deps.backupRoot)
-  emit('backup', 'Destination data backed up', 1, 1)
-
   let data: SourceSiteData
   try {
     data = await loadSourceSiteData(request.sourceBrowserId, sourceProfileDir, origin)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to read source session data'
-    for (const category of selected) {
-      categories.push({
+    return finalize(
+      id,
+      origin,
+      startedAt,
+      selected.map((category) => ({
         category,
-        status: 'failed',
+        status: 'failed' as const,
         detected: false,
         imported: 0,
         skipped: 0,
         failed: 0,
         verified: false,
         reasons: [message]
-      })
-    }
-    return finalize(id, origin, startedAt, categories, backup.backupPath, backup.manifestPath, plan.warnings, 'failed', deps, request)
+      })),
+      undefined,
+      undefined,
+      plan.warnings,
+      'failed',
+      deps,
+      { sourceBrowserId: request.sourceBrowserId, destBrowserId: request.destBrowserId }
+    )
   }
 
+  return migrateSiteData({
+    id,
+    origin,
+    startedAt,
+    destBrowserId: request.destBrowserId,
+    destProfileDir,
+    categories: selected,
+    data,
+    persistSessionCookies: request.persistSessionCookies,
+    warnings: plan.warnings,
+    sourceBrowserId: request.sourceBrowserId,
+    deps
+  })
+}
+
+export interface MigrateSiteDataInput {
+  id: string
+  origin: string
+  startedAt: number
+  destBrowserId: BrowserId
+  destProfileDir: string
+  categories: SupportedCategory[]
+  data: SourceSiteData
+  persistSessionCookies: boolean
+  warnings: string[]
+  sourceBrowserId: BrowserId
+  deps: JobDependencies
+}
+
+export async function migrateSiteData(input: MigrateSiteDataInput): Promise<SessionMigrationResult> {
+  const { id, origin, startedAt, deps } = input
+  const selected = input.categories
+  const emit = (stage: MigrationProgress['stage'], message: string, current?: number, total?: number) =>
+    deps.onProgress({ jobId: id, stage, message, current, total })
+
+  const categories: CategoryMigrationResult[] = []
+  const backup = await backupDestinationData(input.destProfileDir, origin, deps.backupRoot)
+  emit('backup', 'Destination data backed up', 1, 1)
+
+  const data = input.data
   const cookieItems = selected.includes('cookies') ? data.cookies : []
   const localStorageItems = selected.includes('localStorage') ? data.localStorage : []
-  if (cookieItems.length === 0 && localStorageItems.length === 0) {
+  const sessionStorageItems = selected.includes('sessionStorage') ? data.sessionStorage : []
+  const categoryError = (category: string): string | undefined =>
+    category === 'cookies' ? data.cookieError : category === 'localStorage' ? data.localStorageError : data.sessionStorageError
+  const categoryLabel = (category: string): string =>
+    category === 'cookies' ? 'cookies' : category === 'localStorage' ? 'Local Storage records' : 'Session Storage records'
+  if (cookieItems.length === 0 && localStorageItems.length === 0 && sessionStorageItems.length === 0) {
     for (const category of selected) {
-      const error = category === 'cookies' ? data.cookieError : data.localStorageError
+      const error = categoryError(category)
       categories.push({
         category,
         status: error ? 'failed' : 'skipped',
@@ -104,25 +168,38 @@ export async function runSiteMigration(request: SiteMigrationRequest, deps: JobD
         skipped: 0,
         failed: 0,
         verified: false,
-        reasons: [error ?? `No ${category === 'cookies' ? 'cookies' : 'Local Storage records'} were detected for this origin.`]
+        reasons: [error ?? `No ${categoryLabel(category)} were detected for this origin.`]
       })
     }
-    return finalize(id, origin, startedAt, categories, backup.backupPath, backup.manifestPath, plan.warnings, 'failed', deps, request)
+    return finalize(
+      id,
+      origin,
+      startedAt,
+      categories,
+      backup.backupPath,
+      backup.manifestPath,
+      input.warnings,
+      'failed',
+      deps,
+      { sourceBrowserId: input.sourceBrowserId, destBrowserId: input.destBrowserId }
+    )
   }
 
   let writer: SessionWriter | undefined
-  const verification = {
+  const verification: SessionMigrationResult['verification'] = {
     ok: false,
     cookiesChecked: 0,
     cookiesMatched: 0,
     localStorageChecked: 0,
     localStorageMatched: 0,
-    details: [] as string[]
+    sessionStorageChecked: 0,
+    sessionStorageMatched: 0,
+    details: []
   }
 
   try {
     emit('launch', 'Launching the destination browser')
-    writer = await CdpSessionWriter.open(request.destBrowserId, destProfileDir, origin)
+    writer = await CdpSessionWriter.open(input.destBrowserId, input.destProfileDir, origin)
     emit('launch', 'Destination browser ready', 1, 1)
     if (writer.staged) {
       emit('launch', 'Modern Chromium blocks remote debugging on default profiles; using a staged destination profile')
@@ -155,7 +232,7 @@ export async function runSiteMigration(request: SiteMigrationRequest, deps: JobD
       } else {
         emit('cookies', `Importing ${cookieItems.length} cookie record(s)`, 0, cookieItems.length)
         cookieWrite = await writer.writeCookies(cookieItems, {
-          persistSessionCookies: request.persistSessionCookies
+          persistSessionCookies: input.persistSessionCookies
         })
         emit('cookies', 'Cookie import completed', cookieItems.length, cookieItems.length)
         const cookieVerify = await writer.verifyCookies(cookieItems)
@@ -240,6 +317,55 @@ export async function runSiteMigration(request: SiteMigrationRequest, deps: JobD
       }
     }
 
+    if (selected.includes('sessionStorage')) {
+      if (data.sessionStorageError) {
+        categories.push({
+          category: 'sessionStorage',
+          status: 'failed',
+          detected: true,
+          imported: 0,
+          skipped: 0,
+          failed: data.sessionStorage.length,
+          verified: false,
+          reasons: [data.sessionStorageError]
+        })
+      } else if (sessionStorageItems.length === 0) {
+        categories.push({
+          category: 'sessionStorage',
+          status: 'skipped',
+          detected: false,
+          imported: 0,
+          skipped: 0,
+          failed: 0,
+          verified: false,
+          reasons: ['No Session Storage records were detected for this exact origin.']
+        })
+      } else {
+        emit('sessionStorage', `Importing ${sessionStorageItems.length} Session Storage record(s)`, 0, sessionStorageItems.length)
+        const ssWrite = await writer.writeSessionStorage(origin, sessionStorageItems)
+        emit('sessionStorage', 'Session Storage import completed', sessionStorageItems.length, sessionStorageItems.length)
+        const ssVerify = await writer.verifySessionStorage(origin, sessionStorageItems)
+        verification.sessionStorageChecked = ssVerify.checked
+        verification.sessionStorageMatched = ssVerify.matched
+        verification.details.push(...ssVerify.details)
+        const verified = ssVerify.checked > 0 && ssVerify.matched === ssVerify.checked
+        categories.push({
+          category: 'sessionStorage',
+          status: ssWrite.imported > 0 ? 'partially-migrated' : 'failed',
+          detected: true,
+          imported: ssWrite.imported,
+          skipped: ssWrite.skipped,
+          failed: ssWrite.failed,
+          verified,
+          reasons: [
+            ...ssWrite.reasons,
+            ...ssVerify.details,
+            'Session Storage is tab- and session-scoped: it was written into the destination tab and persisted for session restore, but it will not appear in a brand-new tab.'
+          ]
+        })
+      }
+    }
+
     emit('verify', 'Verifying destination data')
     const categoryOk = categories.every(
       (category) => category.status === 'migrated' && category.verified && category.failed === 0
@@ -247,7 +373,7 @@ export async function runSiteMigration(request: SiteMigrationRequest, deps: JobD
     verification.ok = categoryOk
     if (!categoryOk) verification.details.push('One or more categories did not fully verify.')
 
-    if (selected.includes('cookies') && !request.persistSessionCookies && cookieItems.some((cookie) => cookie.session)) {
+    if (selected.includes('cookies') && !input.persistSessionCookies && cookieItems.some((cookie) => cookie.session)) {
       verification.details.push('Session-only cookies were imported without an expiry and may be removed when the destination browser closes.')
     }
   } catch (error) {
@@ -279,7 +405,7 @@ export async function runSiteMigration(request: SiteMigrationRequest, deps: JobD
     }
   }
 
-  await verifyCookiePersistence(destProfileDir, origin, cookieItems, verification, categories)
+  await verifyCookiePersistence(input.destProfileDir, origin, cookieItems, verification, categories)
 
   const overall = computeOverall(categories)
   return finalize(
@@ -289,10 +415,10 @@ export async function runSiteMigration(request: SiteMigrationRequest, deps: JobD
     categories,
     backup.backupPath,
     backup.manifestPath,
-    [...plan.warnings, ...verification.details],
+    [...input.warnings, ...verification.details],
     overall,
     deps,
-    request,
+    { sourceBrowserId: input.sourceBrowserId, destBrowserId: input.destBrowserId },
     verification
   )
 }
@@ -300,7 +426,7 @@ export async function runSiteMigration(request: SiteMigrationRequest, deps: JobD
 async function verifyCookiePersistence(
   destProfileDir: string,
   origin: string,
-  cookies: Array<{ name: string; domain: string; path: string; session: boolean }>,
+  cookies: DecryptedCookie[],
   verification: SessionMigrationResult['verification'],
   categories: CategoryMigrationResult[]
 ): Promise<void> {
@@ -342,17 +468,22 @@ function computeOverall(categories: CategoryMigrationResult[]): SessionMigration
   return 'failed'
 }
 
+interface JobMeta {
+  sourceBrowserId: BrowserId
+  destBrowserId: BrowserId
+}
+
 async function finalize(
   id: string,
   origin: string,
   startedAt: number,
   categories: CategoryMigrationResult[],
-  backupPath: string,
-  backupManifestPath: string,
+  backupPath: string | undefined,
+  backupManifestPath: string | undefined,
   warnings: string[],
   overall: SessionMigrationResult['overall'],
   deps: JobDependencies,
-  request?: SiteMigrationRequest,
+  meta: JobMeta,
   verification?: SessionMigrationResult['verification']
 ): Promise<SessionMigrationResult> {
   const finishedAt = Date.now()
@@ -362,6 +493,8 @@ async function finalize(
     cookiesMatched: 0,
     localStorageChecked: 0,
     localStorageMatched: 0,
+    sessionStorageChecked: 0,
+    sessionStorageMatched: 0,
     details: []
   }
   const result: SessionMigrationResult = {
@@ -382,8 +515,8 @@ async function finalize(
   const job: StoredJob = {
     id,
     origin,
-    sourceBrowserId: request?.sourceBrowserId ?? 'chrome',
-    destBrowserId: request?.destBrowserId ?? 'chrome',
+    sourceBrowserId: meta.sourceBrowserId,
+    destBrowserId: meta.destBrowserId,
     startedAt,
     finishedAt,
     overall,

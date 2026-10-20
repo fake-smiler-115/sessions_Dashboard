@@ -24,8 +24,10 @@ export function getSessionCapabilities(input: CapabilityInput): SessionCapabilit
     browserId,
     readableCookies: isChromium,
     readableLocalStorage: isChromium,
+    readableSessionStorage: isChromium,
     writableCookies: isChromium && supportsCdp && installed,
     writableLocalStorage: isChromium && supportsCdp && installed,
+    writableSessionStorage: isChromium && supportsCdp && installed,
     requiresKeychain: isChromium && hasKeychainService,
     installed,
     reasons
