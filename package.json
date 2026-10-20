@@ -1,0 +1,56 @@
+{
+  "name": "browser-migration-tool",
+  "version": "0.1.0",
+  "description": "Browser Migration Tool for macOS",
+  "main": "out/main/index.js",
+  "type": "module",
+  "author": "gopivinay",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "package": "electron-builder"
+  },
+  "build": {
+    "appId": "com.browser.migrationtool",
+    "productName": "Browser Migration Tool",
+    "mac": {
+      "category": "public.app-category.utilities"
+    },
+    "directories": {
+      "output": "dist-electron"
+    }
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "classic-level": "3.0.0",
+    "electron-store": "^10.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "uuid": "^11.0.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "4.2.1",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "autoprefixer": "^10.4.20",
+    "electron": "44.9.1",
+    "electron-builder": "26.15.3",
+    "electron-vite": "6.0.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}
